@@ -153,7 +153,7 @@ export async function processPendingSyncJobs(limit = 5) {
       where: { id: jobId },
       data: {
         status,
-        startedAt: status !== 'PENDING' ? new Date() : null,
+        startedAt: new Date(),
         finishedAt: !hasPending ? new Date() : null
       }
     });

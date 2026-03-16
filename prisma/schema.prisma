@@ -1,0 +1,284 @@
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "mysql" url = env("DATABASE_URL") }
+
+enum WorkspaceRole { OWNER ADMIN MEMBER }
+enum Platform { META GOOGLE TIKTOK SNAPCHAT }
+enum ConnectionStatus { ACTIVE DISCONNECTED EXPIRED }
+enum AccountStatus { ACTIVE DISCONNECTED }
+enum SyncStatus { PENDING RUNNING COMPLETED FAILED PARTIAL }
+enum SyncItemStatus { PENDING PROCESSING COMPLETED FAILED RETRYING }
+
+model User {
+  id                   String             @id @default(cuid())
+  email                String             @unique
+  name                 String?
+  passwordHash         String
+  emailVerifiedAt      DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  ownedWorkspaces      Workspace[]        @relation("WorkspaceOwner")
+  workspaceMemberships WorkspaceMember[]
+  sessions             Session[]
+  createdSyncJobs      SyncJob[]
+  auditLogs            AuditLog[]
+}
+
+model Workspace {
+  id                String             @id @default(cuid())
+  name              String
+  slug              String             @unique
+  ownerUserId       String
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  owner             User               @relation("WorkspaceOwner", fields: [ownerUserId], references: [id])
+  members           WorkspaceMember[]
+  connections       PlatformConnection[]
+  rootEntities      RootEntity[]
+  linkedAccounts    LinkedAdAccount[]
+  campaigns         Campaign[]
+  adGroups          AdGroup[]
+  ads               Ad[]
+  dailyMetrics      DailyMetric[]
+  conversionMetrics ConversionMetric[]
+  syncJobs          SyncJob[]
+  syncJobItems      SyncJobItem[]
+  auditLogs         AuditLog[]
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole
+  createdAt   DateTime      @default(now())
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id])
+  user        User          @relation(fields: [userId], references: [id])
+  @@unique([workspaceId, userId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model PlatformConnection {
+  id             String           @id @default(cuid())
+  workspaceId    String
+  platform       Platform
+  platformUserId String?
+  accessToken    String
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  status         ConnectionStatus @default(ACTIVE)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  workspace      Workspace        @relation(fields: [workspaceId], references: [id])
+  rootEntities   RootEntity[]
+  linkedAccounts LinkedAdAccount[]
+  @@unique([workspaceId, platform])
+}
+
+model RootEntity {
+  id             String             @id @default(cuid())
+  workspaceId    String
+  connectionId   String
+  platform       Platform
+  externalId     String
+  entityType     String
+  name           String
+  metadataJson   Json?
+  createdAt      DateTime           @default(now())
+  workspace      Workspace          @relation(fields: [workspaceId], references: [id])
+  connection     PlatformConnection @relation(fields: [connectionId], references: [id])
+  linkedAccounts LinkedAdAccount[]
+  @@unique([workspaceId, platform, externalId])
+}
+
+model LinkedAdAccount {
+  id                String             @id @default(cuid())
+  workspaceId       String
+  connectionId      String
+  rootEntityId      String?
+  platform          Platform
+  externalAccountId String
+  accountName       String
+  currency          String?
+  timezone          String?
+  status            AccountStatus      @default(ACTIVE)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  workspace         Workspace          @relation(fields: [workspaceId], references: [id])
+  connection        PlatformConnection @relation(fields: [connectionId], references: [id])
+  rootEntity        RootEntity?        @relation(fields: [rootEntityId], references: [id])
+  campaigns         Campaign[]
+  adGroups          AdGroup[]
+  ads               Ad[]
+  dailyMetrics      DailyMetric[]
+  conversionMetrics ConversionMetric[]
+  syncJobItems      SyncJobItem[]
+  @@unique([workspaceId, platform, externalAccountId])
+}
+
+model Campaign {
+  id                 String             @id @default(cuid())
+  workspaceId        String
+  platform           Platform
+  linkedAdAccountId  String
+  externalCampaignId String
+  campaignName       String
+  status             String?
+  objective          String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  workspace          Workspace          @relation(fields: [workspaceId], references: [id])
+  linkedAdAccount    LinkedAdAccount    @relation(fields: [linkedAdAccountId], references: [id])
+  adGroups           AdGroup[]
+  ads                Ad[]
+  dailyMetrics       DailyMetric[]
+  conversionMetrics  ConversionMetric[]
+  @@unique([workspaceId, platform, externalCampaignId])
+}
+
+model AdGroup {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  platform          Platform
+  linkedAdAccountId String
+  campaignId        String
+  externalAdGroupId String
+  name              String
+  status            String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id])
+  linkedAdAccount   LinkedAdAccount @relation(fields: [linkedAdAccountId], references: [id])
+  campaign          Campaign        @relation(fields: [campaignId], references: [id])
+  ads               Ad[]
+  dailyMetrics      DailyMetric[]
+  @@unique([workspaceId, platform, externalAdGroupId])
+}
+
+model Ad {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  platform          Platform
+  linkedAdAccountId String
+  campaignId        String
+  adGroupId         String
+  externalAdId      String
+  name              String
+  status            String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id])
+  linkedAdAccount   LinkedAdAccount @relation(fields: [linkedAdAccountId], references: [id])
+  campaign          Campaign        @relation(fields: [campaignId], references: [id])
+  adGroup           AdGroup         @relation(fields: [adGroupId], references: [id])
+  dailyMetrics      DailyMetric[]
+  @@unique([workspaceId, platform, externalAdId])
+}
+
+model DailyMetric {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  platform          Platform
+  linkedAdAccountId String
+  campaignId        String?
+  adGroupId         String?
+  adId              String?
+  metricDate        DateTime
+  spend             Decimal         @db.Decimal(18, 4)
+  impressions       Int
+  reach             Int             @default(0)
+  clicks            Int
+  ctr               Decimal         @db.Decimal(10, 4)
+  cpc               Decimal         @db.Decimal(18, 4)
+  cpm               Decimal         @db.Decimal(18, 4)
+  conversions       Decimal         @db.Decimal(18, 4)
+  revenue           Decimal         @db.Decimal(18, 4)
+  roas              Decimal         @db.Decimal(18, 4)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id])
+  linkedAdAccount   LinkedAdAccount @relation(fields: [linkedAdAccountId], references: [id])
+  campaign          Campaign?       @relation(fields: [campaignId], references: [id])
+  adGroup           AdGroup?        @relation(fields: [adGroupId], references: [id])
+  ad                Ad?             @relation(fields: [adId], references: [id])
+}
+
+model ConversionMetric {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  platform          Platform
+  linkedAdAccountId String
+  campaignId        String?
+  metricDate        DateTime
+  leads             Int             @default(0)
+  purchases         Int             @default(0)
+  addToCart         Int             @default(0)
+  initiateCheckout  Int             @default(0)
+  landingPageViews  Int             @default(0)
+  videoViews        Int             @default(0)
+  engagements       Int             @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id])
+  linkedAdAccount   LinkedAdAccount @relation(fields: [linkedAdAccountId], references: [id])
+  campaign          Campaign?       @relation(fields: [campaignId], references: [id])
+}
+
+model SyncJob {
+  id              String      @id @default(cuid())
+  workspaceId     String
+  triggerType     String
+  platform        Platform
+  jobType         String
+  status          SyncStatus  @default(PENDING)
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  errorMessage    String?
+  createdByUserId String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  workspace       Workspace   @relation(fields: [workspaceId], references: [id])
+  createdBy       User?       @relation(fields: [createdByUserId], references: [id])
+  items           SyncJobItem[]
+}
+
+model SyncJobItem {
+  id                String         @id @default(cuid())
+  workspaceId       String
+  syncJobId         String
+  platform          Platform
+  linkedAdAccountId String
+  dateFrom          DateTime
+  dateTo            DateTime
+  entityType        String
+  status            SyncItemStatus @default(PENDING)
+  attempts          Int            @default(0)
+  lastError         String?
+  startedAt         DateTime?
+  finishedAt        DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  workspace         Workspace      @relation(fields: [workspaceId], references: [id])
+  syncJob           SyncJob        @relation(fields: [syncJobId], references: [id])
+  linkedAdAccount   LinkedAdAccount @relation(fields: [linkedAdAccountId], references: [id])
+}
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String?
+  eventType   String
+  entityType  String?
+  entityId    String?
+  detailsJson Json?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  user        User?     @relation(fields: [userId], references: [id])
+}
